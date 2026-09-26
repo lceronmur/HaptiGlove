@@ -9,9 +9,7 @@ public class HandDemo : MonoBehaviour {
     public Vector3 flexAxis = Vector3.forward;
 
     public Transform[] thumb, index, middle, ring, pinky;
-    // Pesos relativos por articulacion (base -> punta). Se normalizan solos
-    // para que la SUMA de flexion de un dedo nunca pase de maxAngle.
-    static readonly float[] W = { 0.45f, 0.35f, 0.20f, 0.10f };
+    static readonly float[] W = { 1.0f, 1.0f, 0.7f };
 
     SerialPort port;
     Thread thread;
@@ -59,17 +57,10 @@ public class HandDemo : MonoBehaviour {
         float target = Mathf.Clamp01(raw / 4095f) * maxAngle;
         angle = Mathf.Lerp(angle, target, Time.deltaTime * 15f);
 
-        for (int f = 0; f < 5; f++) {
-            int n = fingers[f].Length;
-            float wSum = 0f;
-            for (int j = 0; j < n; j++) wSum += W[Mathf.Min(j, W.Length - 1)];
-
-            for (int j = 0; j < n; j++) {
-                float share = W[Mathf.Min(j, W.Length - 1)] / wSum; // normalizado: suma = 1
+        for (int f = 0; f < 5; f++)
+            for (int j = 0; j < fingers[f].Length; j++)
                 fingers[f][j].localRotation =
-                    rest[f][j] * Quaternion.AngleAxis(angle * share, flexAxis);
-            }
-        }
+                    rest[f][j] * Quaternion.AngleAxis(angle * W[Mathf.Min(j, 2)], flexAxis);
     }
 
     void OnDestroy() {
