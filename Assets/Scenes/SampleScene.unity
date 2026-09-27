@@ -461,19 +461,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1baa2bfa9338d48759f09e0de662948e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HandDemo
-  portName: /dev/cu.usbserial-0001
+  portName: COM9
   baudRate: 115200
   maxAngle: 90
   flexAxis: {x: 0, y: 0, z: 1}
-  thumbFlexAxis: {x: 0, y: 0, z: 1}
-  wBase: 0.45
-  wMedia: 0.35
-  wPunta: 0.2
-  wUltima: 0.1
-  dedosInicio: 0
-  dedosFin: 0.6
-  pulgarInicio: 0.5
-  pulgarFin: 1
   thumb:
   - {fileID: 1035756121}
   - {fileID: 1035756120}
@@ -498,6 +489,10 @@ MonoBehaviour:
   - {fileID: 1035756124}
   - {fileID: 1035756123}
   - {fileID: 1035756122}
+  wrist: {fileID: 2146160345}
+  mpuAxesInvert: {x: 1, y: 1, z: 1}
+  rotSmooth: 15
+  flexSmooth: 15
 --- !u!4 &880078106
 Transform:
   m_ObjectHideFlags: 0
@@ -679,6 +674,11 @@ Transform:
 --- !u!4 &1035756137 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 4918753458281921464, guid: 44a77d86918494a76a4348b2dc46b4b2, type: 3}
+  m_PrefabInstance: {fileID: 1035756118}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &2146160345 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8965811294570246362, guid: 44a77d86918494a76a4348b2dc46b4b2, type: 3}
   m_PrefabInstance: {fileID: 1035756118}
   m_PrefabAsset: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
