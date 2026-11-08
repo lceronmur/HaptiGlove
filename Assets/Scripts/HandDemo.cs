@@ -34,7 +34,7 @@ public class HandDemo : MonoBehaviour {
             port.Open();
             Debug.Log("Puerto abierto OK: " + portName);
         } catch (System.Exception e) {
-            Debug.LogError("No se pudo abrir el puerto: " + e.Message);
+            Debug.LogWarning("No se pudo abrir el puerto (guante desconectado): " + e.Message);
             return;
         }
 
