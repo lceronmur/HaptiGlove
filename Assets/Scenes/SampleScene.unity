@@ -383,6 +383,11 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
+--- !u!4 &757969262 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 44a77d86918494a76a4348b2dc46b4b2, type: 3}
+  m_PrefabInstance: {fileID: 1035756118}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -461,10 +466,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1baa2bfa9338d48759f09e0de662948e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::HandDemo
+<<<<<<< Updated upstream
   portName: COM9
+=======
+  conexion: 0
+  puertoUSB: COM9
+  puertoBluetooth: COM10
+>>>>>>> Stashed changes
   baudRate: 115200
+  dtr: 0
+  segundosSinDatos: 3
   maxAngle: 90
   flexAxis: {x: 0, y: 0, z: 1}
+<<<<<<< Updated upstream
+=======
+  suavizado: 15
+  invertir: 0000000000
+>>>>>>> Stashed changes
   thumb:
   - {fileID: 1035756121}
   - {fileID: 1035756120}
@@ -489,10 +507,36 @@ MonoBehaviour:
   - {fileID: 1035756124}
   - {fileID: 1035756123}
   - {fileID: 1035756122}
+<<<<<<< Updated upstream
   wrist: {fileID: 2146160345}
   mpuAxesInvert: {x: 1, y: 1, z: 1}
   rotSmooth: 15
   flexSmooth: 15
+=======
+  muneca: {fileID: 757969262}
+  usarIMU: 1
+  suavizadoRotacion: 20
+  imuDetectado: 0
+  hapticaActiva: 1
+  intervaloEnvio: 0.05
+  intervaloKeepAlive: 0.3
+  vibracionActual:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  mostrarPanel: 1
+  cuentaRegresiva: 3
+  logLineas: 1
+  estado: Desconectado
+  flexionActual:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+>>>>>>> Stashed changes
 --- !u!4 &880078106
 Transform:
   m_ObjectHideFlags: 0
