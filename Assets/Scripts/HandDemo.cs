@@ -4,24 +4,13 @@ using System.Collections.Generic;
 using System.IO.Ports;
 using System.Threading;
 using UnityEngine;
-using System.Globalization;
 
-<<<<<<< Updated upstream
-public class HandDemo : MonoBehaviour
-{
-    [Header("Serial")]
-    public string portName = "/dev/cu.HaptiGlove";
-    public int baudRate = 115200;
-
-    [Header("Dedos")]
-    public float maxAngle = 90f;
-    public Vector3 flexAxis = Vector3.forward;
-=======
-// Lee del ESP32 lineas "v0,v1,v2,v3,v4" (0..4095, ya calibradas, modo 4 UNITY)
-// en orden: pulgar, indice, medio, anular, menique.
+// Lee del ESP32 lineas "p,i,m,a,n" (0..4095, ya calibradas, modo 4 UNITY) y,
+// si hay MPU6050, ",qw,qx,qy,qz" con la orientacion de la muneca.
 // Funciona por cable USB o por Bluetooth (en Windows el Bluetooth del ESP32
 // aparece como un puerto COM virtual al emparejarlo).
-// Incluye un panel en pantalla para calibrar el guante desde Unity.
+// Incluye un panel en pantalla para calibrar el guante y probar los motores,
+// y control de los vibromotores con el teclado.
 public class HandDemo : MonoBehaviour {
     public enum Conexion { Auto, USB, Bluetooth }
 
@@ -46,7 +35,6 @@ public class HandDemo : MonoBehaviour {
     public bool[] invertir = new bool[5];
 
     [Header("Huesos de cada dedo (base -> punta)")]
->>>>>>> Stashed changes
     public Transform[] thumb, index, middle, ring, pinky;
 
     [Header("Muneca (MPU6050)")]
@@ -64,6 +52,29 @@ public class HandDemo : MonoBehaviour {
     public float intervaloKeepAlive = 0.3f;
     [Range(0, 1)] public float[] vibracionActual = new float[5];
 
+    [Header("Vibracion con teclado (mantener presionada)")]
+    public bool tecladoActivo = true;
+    [Tooltip("Tecla de cada motor: pulgar, indice, medio, anular, menique")]
+    public KeyCode[] teclasMotor = { KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5 };
+    [Tooltip("Tecla que enciende los 5 motores a la vez")]
+    public KeyCode teclaTodos = KeyCode.Space;
+    [Range(0, 1)] public float intensidadTeclado = 1f;
+
+    [Header("Vibracion por colision (dedo toca un objeto)")]
+    [Tooltip("Crea al iniciar sensores en la punta de cada dedo; al tocar un objeto con Collider vibra ese dedo")]
+    public bool vibrarAlColisionar = true;
+    [Tooltip("Cuantos huesos de la punta de cada dedo detectan colision (1 = solo la ultima falange)")]
+    [Range(1, 4)] public int huesosConSensor = 2;
+    [Tooltip("Radio del sensor como fraccion del largo de la falange")]
+    [Range(0.1f, 1.5f)] public float radioSensor = 0.5f;
+    [Tooltip("Vacio = cualquier objeto. Si pone un Tag (ej. 'Tocable'), solo vibra con objetos que lo tengan")]
+    public string soloConTag = "";
+    [Range(0, 1)] public float intensidadContacto = 0.7f;  // mientras sigue tocando
+    [Range(0, 1)] public float intensidadImpacto = 1f;     // golpe al empezar a tocar
+    public float duracionImpacto = 0.12f;
+    [Tooltip("Solo lectura: que dedos estan tocando algo")]
+    public bool[] dedoTocando = new bool[5];
+
     [Header("Calibracion")]
     public bool mostrarPanel = true;
     [Tooltip("Segundos para acomodar la mano antes de cada captura")]
@@ -77,26 +88,8 @@ public class HandDemo : MonoBehaviour {
     static readonly float[] W = { 1.0f, 1.0f, 0.7f };  // peso por falange
     static readonly string[] NOMBRES = { "Pulgar", "Indice", "Medio", "Anular", "Menique" };
 
-    [Header("Muñeca (MPU)")]
-    public Transform wrist;              // Transform del pulso/muñeca a rotar
-    public Vector3 mpuAxesInvert = Vector3.one; // usa -1 en algún eje si la rotación sale invertida
-    public float rotSmooth = 15f;
-    public float flexSmooth = 15f;
-
     SerialPort port;
     Thread thread;
-<<<<<<< Updated upstream
-    volatile bool running = true;
-
-    // Datos crudos compartidos entre threads (lock simple, suficiente a esta frecuencia)
-    readonly object dataLock = new object();
-    int rawFlex = 0;
-    float rawPitch = 0f, rawRoll = 0f, rawYaw = 0f;
-
-    Transform[][] fingers;
-    Quaternion[][] rest;
-    Quaternion wristRest;
-=======
     readonly int[] raw = new int[5];
     readonly float[] imuQ = { 1, 0, 0, 0 };  // w, x, y, z (marco del sensor)
     volatile bool hayIMU = false;
@@ -125,22 +118,12 @@ public class HandDemo : MonoBehaviour {
     readonly float[] pulsoHasta = new float[5];
     readonly int[] ultimoEnviado = new int[5];
     float proximoEnvio, ultimoEnvioMotores;
->>>>>>> Stashed changes
 
-    float angle;                 // ángulo de flexión suavizado
-    Quaternion wristTarget;      // rotación objetivo de muñeca
-
-    void Start()
-    {
+    void Start() {
         fingers = new[] { thumb, index, middle, ring, pinky };
         rest = new Quaternion[5][];
-<<<<<<< Updated upstream
-        for (int f = 0; f < 5; f++)
-        {
-=======
         for (int f = 0; f < 5; f++) {
             if (fingers[f] == null) fingers[f] = new Transform[0];
->>>>>>> Stashed changes
             rest[f] = new Quaternion[fingers[f].Length];
             for (int j = 0; j < fingers[f].Length; j++)
                 rest[f][j] = fingers[f][j].localRotation;
@@ -148,75 +131,9 @@ public class HandDemo : MonoBehaviour {
         if (flexionActual == null || flexionActual.Length != 5) flexionActual = new float[5];
         if (vibracionActual == null || vibracionActual.Length != 5) vibracionActual = new float[5];
         if (muneca != null) rotInicialMuneca = muneca.rotation;
+        if (dedoTocando == null || dedoTocando.Length != 5) dedoTocando = new bool[5];
+        if (vibrarAlColisionar) CrearSensores();
 
-<<<<<<< Updated upstream
-        if (wrist != null) wristRest = wrist.localRotation;
-
-        try
-        {
-            port = new SerialPort(portName, baudRate);
-            port.ReadTimeout = 500;
-            port.NewLine = "\n";
-            port.Open();
-            Debug.Log("Puerto abierto OK: " + portName);
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogError("No se pudo abrir el puerto: " + e.Message);
-            return;
-        }
-
-        thread = new Thread(ReadLoop) { IsBackground = true };
-        thread.Start();
-    }
-
-    void ReadLoop()
-    {
-        while (running)
-        {
-            string line;
-            try
-            {
-                line = port.ReadLine();
-            }
-            catch (System.TimeoutException)
-            {
-                continue; // normal si no llegan datos en 500ms
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning("Excepcion leyendo: " + ex.GetType().Name + " - " + ex.Message);
-                continue;
-            }
-            Debug.Log("Recibido: [" + line + "]");
-            // Formato esperado: "flex,pitch,roll,yaw"  ej: "512,12.3,-4.1,88.7"
-            string[] parts = line.Trim().Split(',');
-            if (parts.Length < 4)
-            {
-                Debug.LogWarning("Linea con formato inesperado: [" + line + "]");
-                continue;
-            }
-
-            if (int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out int f) &&
-               float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float p) &&
-               float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float r) &&
-               float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float y))
-            {
-                lock (dataLock)
-                {
-                    rawFlex = f;
-                    rawPitch = p;
-                    rawRoll = r;
-                    rawYaw = y;
-                }
-                Debug.Log($"Parseado -> flex:{f} pitch:{p} roll:{r} yaw:{y}");
-            }
-            else
-            {
-                Debug.LogWarning("No se pudo parsear: [" + line + "]");
-            }
-        }
-=======
         thread = new Thread(BucleConexion) { IsBackground = true };
         thread.Start();
     }
@@ -299,7 +216,7 @@ public class HandDemo : MonoBehaviour {
                 }
 
                 if (!ok) {
-                    // Texto del ESP32: se muestra en el panel de calibracion
+                    // Texto del ESP32: se muestra en el panel
                     if (line.Contains("Listo")) listoRecibido = true;
                     colaMensajes.Enqueue(line);
                     continue;
@@ -337,7 +254,7 @@ public class HandDemo : MonoBehaviour {
         try { if (sp != null && sp.IsOpen) sp.Close(); } catch { }
     }
 
-    // Envia un comando al ESP32 (a, c, r, t, 1..4, h, V,...)
+    // Envia un comando al ESP32 (a, c, r, t, g, 1..4, h, V,...)
     public bool Enviar(string comando, bool silencioso = false) {
         var sp = port;
         if (sp == null || !sp.IsOpen) {
@@ -367,15 +284,74 @@ public class HandDemo : MonoBehaviour {
         pulsoHasta[dedo] = Time.time + duracion;
     }
 
+    // ------------------------------------------------------------------ Colisiones de los dedos
+
+    readonly int[] toques = new int[5];  // sensores del dedo que estan tocando algo
+
+    // Pone una esfera trigger en los ultimos huesos de cada dedo (si no tienen ya una YemaHaptica)
+    void CrearSensores() {
+        int creados = 0;
+        for (int f = 0; f < 5; f++) {
+            var huesos = fingers[f];
+            if (huesos.Length == 0) continue;
+            int desde = Mathf.Max(0, huesos.Length - huesosConSensor);
+            for (int j = desde; j < huesos.Length; j++) {
+                Transform h = huesos[j];
+                if (h == null || h.GetComponentInChildren<YemaHaptica>() != null) continue;
+
+                // Largo aproximado de la falange (distancia al hueso anterior o siguiente)
+                Transform vecino = j > 0 ? huesos[j - 1] : (huesos.Length > 1 ? huesos[1] : null);
+                float largo = vecino != null ? Vector3.Distance(h.position, vecino.position) : 0.02f;
+                if (largo < 1e-4f) largo = 0.02f;
+
+                var go = new GameObject("SensorColision_" + NOMBRES[f] + "_" + j);
+                go.transform.SetParent(h, false);
+                go.layer = h.gameObject.layer;
+                var esfera = go.AddComponent<SphereCollider>();
+                float escala = Mathf.Max(h.lossyScale.x, h.lossyScale.y, h.lossyScale.z);
+                esfera.radius = largo * radioSensor / Mathf.Max(escala, 1e-6f);
+                go.AddComponent<YemaHaptica>().Configurar(this, f, soloConTag);
+                creados++;
+            }
+        }
+        AgregarMensaje(">> Sensores de colision creados: " + creados);
+    }
+
+    // Llamado por YemaHaptica cuando un sensor empieza (true) o deja (false) de tocar un objeto
+    public void Tocar(int dedo, bool tocando) {
+        if (dedo < 0 || dedo >= 5) return;
+        toques[dedo] = Mathf.Max(0, toques[dedo] + (tocando ? 1 : -1));
+        bool antes = dedoTocando[dedo];
+        dedoTocando[dedo] = toques[dedo] > 0;
+        if (dedoTocando[dedo] && !antes) Pulso(dedo, intensidadImpacto, duracionImpacto);
+        SetContacto(dedo, dedoTocando[dedo] ? intensidadContacto : 0f);
+    }
+
+    // Raiz de la mano 3D, para que los sensores ignoren los colliders de la propia mano
+    public bool EsParteDeLaMano(Transform t) {
+        if (fingers == null) return false;
+        foreach (var dedo in fingers)
+            if (dedo.Length > 0 && dedo[0] != null && t.IsChildOf(dedo[0].root)) return true;
+        return muneca != null && t.IsChildOf(muneca.root);
+    }
+
     [ContextMenu("Probar motores (uno por uno)")]
     public void ProbarMotores() { if (Application.isPlaying) Enviar("t"); }
+
+    // Intensidad pedida por teclado para un dedo (0 si no hay tecla presionada)
+    float Teclado(int dedo) {
+        if (!tecladoActivo) return 0f;
+        bool presionada = Input.GetKey(teclaTodos) ||
+                          (teclasMotor != null && dedo < teclasMotor.Length && Input.GetKey(teclasMotor[dedo]));
+        return presionada ? intensidadTeclado : 0f;
+    }
 
     void ActualizarVibracion() {
         bool cambio = false, alguno = false;
         int[] v = new int[5];
         for (int f = 0; f < 5; f++) {
             float p = Time.time < pulsoHasta[f] ? pulsoIntensidad[f] : 0f;
-            float total = hapticaActiva ? Mathf.Max(contacto[f], p) : 0f;
+            float total = hapticaActiva ? Mathf.Max(contacto[f], p, Teclado(f)) : 0f;
             vibracionActual[f] = total;
             v[f] = Mathf.RoundToInt(total * 255);
             if (v[f] != ultimoEnviado[f]) cambio = true;
@@ -569,7 +545,7 @@ public class HandDemo : MonoBehaviour {
         if (GUILayout.Button("Borrar")) BorrarCalibracion();
         GUILayout.EndHorizontal();
         GUILayout.Space(6);
-        GUILayout.Label("Vibracion:");
+        GUILayout.Label("Vibracion (teclas 1-5, Espacio = todos):");
         GUILayout.BeginHorizontal();
         for (int f = 0; f < 5; f++)
             if (GUILayout.Button(NOMBRES[f].Substring(0, 3) + (vibracionActual[f] > 0 ? " *" : "")))
@@ -585,6 +561,7 @@ public class HandDemo : MonoBehaviour {
         GUILayout.EndHorizontal();
         GUI.enabled = true;
         hapticaActiva = GUILayout.Toggle(hapticaActiva, " Haptica activa");
+        tecladoActivo = GUILayout.Toggle(tecladoActivo, " Vibrar con teclado");
 
         if (calibrando && GUILayout.Button("Cancelar")) {
             StopAllCoroutines();
@@ -604,48 +581,11 @@ public class HandDemo : MonoBehaviour {
         GUILayout.EndScrollView();
 
         GUILayout.EndArea();
->>>>>>> Stashed changes
     }
 
-    void Update()
-    {
-        int flex; float pitch, roll, yaw;
-        lock (dataLock)
-        {
-            flex = rawFlex; pitch = rawPitch; roll = rawRoll; yaw = rawYaw;
-        }
-
-        // --- Flexión de dedos ---
-        float target = Mathf.Clamp01(flex / 4095f) * maxAngle;
-        angle = Mathf.Lerp(angle, target, Time.deltaTime * flexSmooth);
-
-        for (int fi = 0; fi < 5; fi++)
-            for (int j = 0; j < fingers[fi].Length; j++)
-                fingers[fi][j].localRotation =
-                    rest[fi][j] * Quaternion.AngleAxis(angle * W[Mathf.Min(j, 2)], flexAxis);
-
-        // --- Rotación de muñeca con el MPU ---
-        if (wrist != null)
-        {
-            Vector3 euler = new Vector3(
-                pitch * mpuAxesInvert.x,
-                yaw * mpuAxesInvert.y,
-                roll * mpuAxesInvert.z
-            );
-            wristTarget = wristRest * Quaternion.Euler(euler);
-            wrist.localRotation = Quaternion.Slerp(wrist.localRotation, wristTarget, Time.deltaTime * rotSmooth);
-        }
-    }
-
-    void OnDestroy()
-    {
+    void OnDestroy() {
         running = false;
-<<<<<<< Updated upstream
-        try { if (port != null && port.IsOpen) port.Close(); } catch { }
-        thread?.Join(200);
-=======
         thread?.Join(1000);
         Cerrar();
->>>>>>> Stashed changes
     }
 }

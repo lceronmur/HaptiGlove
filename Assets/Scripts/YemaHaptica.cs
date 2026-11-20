@@ -1,25 +1,28 @@
 using UnityEngine;
 
-// Poner en la PUNTA de cada dedo de la mano 3D (hijo del ultimo hueso),
-// con un SphereCollider pequeno. Cuando toca otro objeto con Collider,
-// hace vibrar el motor de ese dedo en el guante.
+// Sensor de colision de un dedo. HandDemo los crea solo (opcion "Vibrar Al Colisionar")
+// en los ultimos huesos de cada dedo; tambien se puede poner a mano en un hueso con un
+// SphereCollider. Cuando toca otro objeto con Collider (ej. un cilindro), vibra el
+// motor de ese dedo en el guante.
 [RequireComponent(typeof(Collider))]
 public class YemaHaptica : MonoBehaviour {
     public enum Dedo { Pulgar = 0, Indice = 1, Medio = 2, Anular = 3, Menique = 4 }
 
-    [Tooltip("Se busca solo en los padres si se deja vacio")]
+    [Tooltip("Si se deja vacio se busca el HandDemo de la escena")]
     public HandDemo mano;
     public Dedo dedo = Dedo.Indice;
-
-    [Header("Intensidades (0..1)")]
-    [Range(0, 1)] public float intensidadContacto = 0.5f;  // mientras sigue tocando
-    [Range(0, 1)] public float intensidadImpacto = 1f;     // golpe inicial al tocar
-    public float duracionImpacto = 0.12f;
 
     [Tooltip("Vacio = cualquier objeto. Si se pone un Tag, solo vibra con objetos que lo tengan")]
     public string soloConTag = "";
 
     int contactos = 0;
+
+    // Usado por HandDemo al crear los sensores automaticamente
+    public void Configurar(HandDemo m, int d, string tag) {
+        mano = m;
+        dedo = (Dedo)d;
+        soloConTag = tag;
+    }
 
     void Reset() {
         GetComponent<Collider>().isTrigger = true;
@@ -33,35 +36,36 @@ public class YemaHaptica : MonoBehaviour {
         if (rb == null) rb = gameObject.AddComponent<Rigidbody>();
         rb.isKinematic = true;
         rb.useGravity = false;
+    }
 
+    void Start() {
         if (mano == null) mano = GetComponentInParent<HandDemo>();
-        if (mano == null) Debug.LogError("YemaHaptica (" + name + "): asigne el campo 'mano'.");
+        if (mano == null) mano = FindFirstObjectByType<HandDemo>();
+        if (mano == null) Debug.LogError("YemaHaptica (" + name + "): no hay HandDemo en la escena.");
     }
 
     bool EsValido(Collider otro) {
-        if (otro.GetComponent<YemaHaptica>() != null) return false;          // otra yema
-        if (mano != null && otro.transform.IsChildOf(mano.transform)) return false;  // la propia mano
+        if (otro.isTrigger) return false;                                  // otros sensores / zonas
+        if (otro.GetComponent<YemaHaptica>() != null) return false;        // otra yema
+        if (mano != null && mano.EsParteDeLaMano(otro.transform)) return false;  // la propia mano
         return string.IsNullOrEmpty(soloConTag) || otro.CompareTag(soloConTag);
     }
 
     void OnTriggerEnter(Collider otro) {
         if (!EsValido(otro)) return;
         contactos++;
-        if (contactos == 1 && mano != null)
-            mano.Pulso((int)dedo, intensidadImpacto, duracionImpacto);
+        if (contactos == 1 && mano != null) mano.Tocar((int)dedo, true);
     }
 
     void OnTriggerExit(Collider otro) {
         if (!EsValido(otro)) return;
-        contactos = Mathf.Max(0, contactos - 1);
-    }
-
-    void Update() {
-        if (mano != null) mano.SetContacto((int)dedo, contactos > 0 ? intensidadContacto : 0f);
+        if (contactos == 0) return;
+        contactos--;
+        if (contactos == 0 && mano != null) mano.Tocar((int)dedo, false);
     }
 
     void OnDisable() {
+        if (contactos > 0 && mano != null) mano.Tocar((int)dedo, false);
         contactos = 0;
-        if (mano != null) mano.SetContacto((int)dedo, 0f);
     }
 }
