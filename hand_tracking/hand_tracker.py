@@ -86,9 +86,10 @@ def main():
         base_options=mp_python.BaseOptions(model_asset_path=MODEL_PATH),
         running_mode=vision.RunningMode.VIDEO,
         num_hands=1,
-        min_hand_detection_confidence=0.6,
-        min_hand_presence_confidence=0.5,
-        min_tracking_confidence=0.5,
+        # Umbrales bajos para que reconozca la mano con el guante puesto (sin piel visible)
+        min_hand_detection_confidence=0.3,
+        min_hand_presence_confidence=0.3,
+        min_tracking_confidence=0.3,
     ))
 
     cap = cv2.VideoCapture(args.camera)
