@@ -505,6 +505,20 @@ public class HandDemo : MonoBehaviour {
         }
     }
 
+    // Donde quedaria la punta del dedo f doblado 't' (0..1). Dobla el dedo un instante y lo deja como estaba.
+    public Vector3 PuntaDoblada(int f, float t) {
+        var h = fingers[f];
+        if (h.Length == 0) return transform.position;
+        var antes = new Quaternion[h.Length];
+        for (int j = 0; j < h.Length; j++) {
+            antes[j] = h[j].localRotation;
+            h[j].localRotation = rest[f][j] * Quaternion.AngleAxis(t * maxAngle * W[Mathf.Min(j, 2)], flexAxis);
+        }
+        Vector3 p = h[h.Length - 1].position;
+        for (int j = 0; j < h.Length; j++) h[j].localRotation = antes[j];
+        return p;
+    }
+
     // ------------------------------------------------------------------ Panel en pantalla
 
     GUIStyle estiloTitulo, estiloInstruccion;
