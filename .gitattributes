@@ -169,3 +169,6 @@ Packages/packages-lock.json linguist-generated
 
 # Exceptions for .asset files such as lightning pre-baking
 LightingData.asset     binary
+
+# Rastreador de mano empaquetado (hand_tracking/hand_tracker_win): cv2.pyd pesa 117 MB
+*.pyd                   lfs

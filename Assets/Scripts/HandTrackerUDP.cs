@@ -180,10 +180,13 @@ public class HandTrackerUDP : MonoBehaviour {
             Debug.Log("[HandTracker] Modelo descargado.");
         }
 
-        string py = ResolvePython();
+        // En Windows se usa la version empaquetada (no necesita Python instalado); si no esta, Python
+        string exe = Path.Combine(TrackerDir, "hand_tracker_win", "hand_tracker_win.exe");
+        bool usarExe = Application.platform == RuntimePlatform.WindowsEditor && File.Exists(exe);
+        string py = usarExe ? exe : ResolvePython();
         if (py == null) { Fail("No encontré python3. Escribe su ruta en el campo Python Path."); yield break; }
 
-        string argsLine = "-u \"" + script + "\" --camera " + cameraIndex + " --port " + port +
+        string argsLine = (usarExe ? "" : "-u \"" + script + "\"") + " --camera " + cameraIndex + " --port " + port +
                           (showSeparateWindow ? "" : " --no-window") +
                           (videoClient != null ? " --video-port " + (port + 1) : "");
         var psi = new ProcessStartInfo(py, argsLine) {
@@ -228,7 +231,8 @@ public class HandTrackerUDP : MonoBehaviour {
     }
 
     string ResolvePython() {
-        if (!string.IsNullOrWhiteSpace(pythonPath)) return pythonPath.Trim();
+        // Una ruta de otro computador (que no existe aqui) se ignora y se busca Python solo
+        if (!string.IsNullOrWhiteSpace(pythonPath) && File.Exists(pythonPath.Trim())) return pythonPath.Trim();
         string[] candidates = {
             "/usr/local/bin/python3",
             "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",

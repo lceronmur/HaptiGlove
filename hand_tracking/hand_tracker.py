@@ -18,6 +18,9 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    # Version .exe (hand_tracking/hand_tracker_win/hand_tracker.exe): el modelo esta en hand_tracking/
+    HERE = os.path.dirname(os.path.dirname(sys.executable))
 MODEL_PATH = os.path.join(HERE, "hand_landmarker.task")
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
              "hand_landmarker/float16/latest/hand_landmarker.task")

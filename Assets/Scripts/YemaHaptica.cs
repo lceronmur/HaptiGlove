@@ -3,7 +3,8 @@ using UnityEngine;
 // Sensor de colision de un dedo. HandDemo los crea solo (opcion "Vibrar Al Colisionar")
 // en los ultimos huesos de cada dedo; tambien se puede poner a mano en un hueso con un
 // SphereCollider. Cuando toca otro objeto con Collider (ej. un cilindro), vibra el
-// motor de ese dedo en el guante.
+// motor de ese dedo en el guante. Si el objeto tocado tiene Grabbable, tambien avisa a
+// GrabController (seccion 11.4) para la logica de agarre.
 [RequireComponent(typeof(Collider))]
 public class YemaHaptica : MonoBehaviour {
     public enum Dedo { Pulgar = 0, Indice = 1, Medio = 2, Anular = 3, Menique = 4 }
@@ -11,6 +12,9 @@ public class YemaHaptica : MonoBehaviour {
     [Tooltip("Si se deja vacio se busca el HandDemo de la escena")]
     public HandDemo mano;
     public Dedo dedo = Dedo.Indice;
+
+    [Tooltip("Si se deja vacio se busca el GrabController de la escena (puede no haber ninguno)")]
+    public GrabController agarre;
 
     [Tooltip("Vacio = cualquier objeto. Si se pone un Tag, solo vibra con objetos que lo tengan")]
     public string soloConTag = "";
@@ -42,11 +46,15 @@ public class YemaHaptica : MonoBehaviour {
         if (mano == null) mano = GetComponentInParent<HandDemo>();
         if (mano == null) mano = FindFirstObjectByType<HandDemo>();
         if (mano == null) Debug.LogError("YemaHaptica (" + name + "): no hay HandDemo en la escena.");
+
+        if (agarre == null) agarre = FindFirstObjectByType<GrabController>();
     }
 
     bool EsValido(Collider otro) {
         if (otro.isTrigger) return false;                                  // otros sensores / zonas
         if (otro.GetComponent<YemaHaptica>() != null) return false;        // otra yema
+        // Un objeto agarrado queda como hijo de la mano: debe seguir siendo valido para detectar que se suelta
+        if (otro.GetComponentInParent<Grabbable>() != null) return true;
         if (mano != null && mano.EsParteDeLaMano(otro.transform)) return false;  // la propia mano
         return string.IsNullOrEmpty(soloConTag) || otro.CompareTag(soloConTag);
     }
@@ -55,13 +63,20 @@ public class YemaHaptica : MonoBehaviour {
         if (!EsValido(otro)) return;
         contactos++;
         if (contactos == 1 && mano != null) mano.Tocar((int)dedo, true);
+
+        var grabbable = otro.GetComponentInParent<Grabbable>();
+        if (grabbable != null && agarre != null) agarre.NotificarContacto((int)dedo, grabbable, true);
     }
 
     void OnTriggerExit(Collider otro) {
         if (!EsValido(otro)) return;
-        if (contactos == 0) return;
-        contactos--;
-        if (contactos == 0 && mano != null) mano.Tocar((int)dedo, false);
+        if (contactos > 0) {
+            contactos--;
+            if (contactos == 0 && mano != null) mano.Tocar((int)dedo, false);
+        }
+
+        var grabbable = otro.GetComponentInParent<Grabbable>();
+        if (grabbable != null && agarre != null) agarre.NotificarContacto((int)dedo, grabbable, false);
     }
 
     void OnDisable() {

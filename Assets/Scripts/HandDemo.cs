@@ -132,6 +132,8 @@ public class HandDemo : MonoBehaviour {
         if (vibracionActual == null || vibracionActual.Length != 5) vibracionActual = new float[5];
         if (muneca != null) rotInicialMuneca = muneca.rotation;
         if (dedoTocando == null || dedoTocando.Length != 5) dedoTocando = new bool[5];
+        // El agarre (GrabController) se agrega solo si la escena no tiene uno
+        if (FindFirstObjectByType<GrabController>() == null) gameObject.AddComponent<GrabController>().mano = this;
         if (vibrarAlColisionar) CrearSensores();
 
         thread = new Thread(BucleConexion) { IsBackground = true };
