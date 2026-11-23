@@ -120,6 +120,16 @@ bool  imuOk = false;
 float q0 = 1, q1 = 0, q2 = 0, q3 = 0;    // orientacion (w, x, y, z)
 float giroBias[3] = {0, 0, 0};           // grados/s
 float beta = BETA_INICIAL;
+
+// Correccion automatica del giroscopio: cuando el guante esta quieto (lecturas estables)
+// se re-estima el bias y no se integra giro, asi la orientacion no deriva sola.
+const float QUIETO_GIRO = 0.8f;          // grados/s de variacion maxima para considerarlo quieto
+const float QUIETO_ACC  = 0.03f;         // g de variacion maxima
+const unsigned long QUIETO_MS = 800;     // tiempo quieto antes de corregir
+const float BIAS_ALFA = 0.02f;           // velocidad de ajuste del bias (a 200 Hz, ~0.25 s)
+float giroMedio[3], accMedio[3];
+bool  hayMedio = false;
+unsigned long quietoDesde = 0;
 unsigned long ultimoIMU = 0, inicioIMU = 0;
 
 enum Modo { PLOTTER = 1, PORCENTAJE = 2, TABLA = 3, UNITY = 4 };
@@ -409,8 +419,23 @@ void actualizarIMU() {
 
   float a[3], g[3];
   if (!imuLeer(a, g)) return;
+
+  // Quieto = las lecturas casi no cambian (no se exige giro ~0: asi corrige tambien un bias malo)
+  bool quieto = hayMedio;
+  for (int i = 0; i < 3; i++) {
+    if (!hayMedio) { giroMedio[i] = g[i]; accMedio[i] = a[i]; }
+    quieto = quieto && fabsf(g[i] - giroMedio[i]) < QUIETO_GIRO && fabsf(a[i] - accMedio[i]) < QUIETO_ACC;
+    giroMedio[i] += 0.1f * (g[i] - giroMedio[i]);
+    accMedio[i]  += 0.1f * (a[i] - accMedio[i]);
+  }
+  hayMedio = true;
+  if (!quieto) quietoDesde = millis();
+  bool fijo = quieto && millis() - quietoDesde > QUIETO_MS;
+  if (fijo) for (int i = 0; i < 3; i++) giroBias[i] += BIAS_ALFA * (giroMedio[i] - giroBias[i]);
+
   const float D2R = 0.0174533f;
-  madgwick((g[0] - giroBias[0]) * D2R, (g[1] - giroBias[1]) * D2R, (g[2] - giroBias[2]) * D2R,
+  float k = fijo ? 0.0f : D2R;  // quieto: no integrar giro (el acelerometro sigue corrigiendo roll/pitch)
+  madgwick((g[0] - giroBias[0]) * k, (g[1] - giroBias[1]) * k, (g[2] - giroBias[2]) * k,
            a[0], a[1], a[2], dt);
 }
 

@@ -38,8 +38,12 @@ public class HandDemo : MonoBehaviour {
     public Transform[] thumb, index, middle, ring, pinky;
 
     [Header("Muneca (MPU6050)")]
-    [Tooltip("Hueso de la muneca / raiz de la mano que gira con el MPU6050")]
+    [Tooltip("Hueso de la muneca que gira con el MPU6050. Vacio = se usa solo el hueso del que salen los dedos " +
+             "(si se pone la raiz del modelo, la mano gira alrededor de un punto lejano y sube/baja)")]
     public Transform muneca;
+    [Tooltip("Giro (grados, eje vertical) entre los ejes del sensor y los de la mano 3D. " +
+             "Si al girar la muneca la mano cabecea arriba/abajo, prueba 90, 180 o 270")]
+    public float giroMontaje = 0f;
     public bool usarIMU = true;
     public float suavizadoRotacion = 20f;
     public bool imuDetectado = false;
@@ -69,7 +73,10 @@ public class HandDemo : MonoBehaviour {
     [Range(0.1f, 1.5f)] public float radioSensor = 0.5f;
     [Tooltip("Vacio = cualquier objeto. Si pone un Tag (ej. 'Tocable'), solo vibra con objetos que lo tengan")]
     public string soloConTag = "";
-    [Range(0, 1)] public float intensidadContacto = 0.7f;  // mientras sigue tocando
+    [Range(0, 1)] public float intensidadContacto = 1f;    // mientras sigue tocando (sin agarrar)
+    [Tooltip("Vibracion mientras se sostiene el objeto (mas suave que solo tocarlo)")]
+    [Range(0, 1)] public float intensidadSosteniendo = 0.3f;
+    [HideInInspector] public bool sosteniendo;  // lo pone GrabController
     [Range(0, 1)] public float intensidadImpacto = 1f;     // golpe al empezar a tocar
     public float duracionImpacto = 0.12f;
     [Tooltip("Solo lectura: que dedos estan tocando algo")]
@@ -100,6 +107,12 @@ public class HandDemo : MonoBehaviour {
     Transform[][] fingers;
     Quaternion[][] rest;
     readonly float[] angle = new float[5];
+    // Esferas sensoras de cada dedo: se usan tambien para frenar el dedo en la superficie de los objetos
+    readonly List<SphereCollider>[] esferasDedo = { new List<SphereCollider>(), new List<SphereCollider>(),
+        new List<SphereCollider>(), new List<SphereCollider>(), new List<SphereCollider>() };
+    readonly Collider[] bufferChoque = new Collider[16];
+    [Tooltip("Al tocar un objeto el dedo se detiene y no lo atraviesa")]
+    public bool dedosChocan = true;
 
     // Mensajes de texto del ESP32 (calibracion, ayuda...) para mostrar en el panel
     readonly ConcurrentQueue<string> colaMensajes = new ConcurrentQueue<string>();
@@ -130,6 +143,10 @@ public class HandDemo : MonoBehaviour {
         }
         if (flexionActual == null || flexionActual.Length != 5) flexionActual = new float[5];
         if (vibracionActual == null || vibracionActual.Length != 5) vibracionActual = new float[5];
+        // Sin muneca asignada: el hueso comun del que salen pulgar y menique (gira en la articulacion)
+        if (muneca == null && thumb.Length > 0 && pinky.Length > 0)
+            for (var t = thumb[0].parent; t != null && muneca == null; t = t.parent)
+                if (pinky[0].IsChildOf(t)) muneca = t;
         if (muneca != null) rotInicialMuneca = muneca.rotation;
         if (dedoTocando == null || dedoTocando.Length != 5) dedoTocando = new bool[5];
         // El agarre (GrabController) se agrega solo si la escena no tiene uno
@@ -299,7 +316,13 @@ public class HandDemo : MonoBehaviour {
             int desde = Mathf.Max(0, huesos.Length - huesosConSensor);
             for (int j = desde; j < huesos.Length; j++) {
                 Transform h = huesos[j];
-                if (h == null || h.GetComponentInChildren<YemaHaptica>() != null) continue;
+                if (h == null) continue;
+                var existente = h.GetComponentInChildren<YemaHaptica>();
+                if (existente != null) {
+                    var e = existente.GetComponent<SphereCollider>();
+                    if (e != null) esferasDedo[f].Add(e);
+                    continue;
+                }
 
                 // Largo aproximado de la falange (distancia al hueso anterior o siguiente)
                 Transform vecino = j > 0 ? huesos[j - 1] : (huesos.Length > 1 ? huesos[1] : null);
@@ -313,6 +336,7 @@ public class HandDemo : MonoBehaviour {
                 float escala = Mathf.Max(h.lossyScale.x, h.lossyScale.y, h.lossyScale.z);
                 esfera.radius = largo * radioSensor / Mathf.Max(escala, 1e-6f);
                 go.AddComponent<YemaHaptica>().Configurar(this, f, soloConTag);
+                esferasDedo[f].Add(esfera);
                 creados++;
             }
         }
@@ -327,6 +351,44 @@ public class HandDemo : MonoBehaviour {
         dedoTocando[dedo] = toques[dedo] > 0;
         if (dedoTocando[dedo] && !antes) Pulso(dedo, intensidadImpacto, duracionImpacto);
         SetContacto(dedo, dedoTocando[dedo] ? intensidadContacto : 0f);
+    }
+
+    // Dobla el dedo f a 'a' grados y dice si alguna de sus esferas choca con un objeto solido.
+    // 'margen' (<1) achica la esfera: el dedo se frena con el sensor un poco DENTRO del objeto,
+    // asi el trigger sigue detectando el contacto (vibracion y agarre).
+    bool DedoChoca(int f, float a, float margen = 0.6f) {
+        var h = fingers[f];
+        for (int j = 0; j < h.Length; j++)
+            h[j].localRotation = rest[f][j] * Quaternion.AngleAxis(a * W[Mathf.Min(j, 2)], flexAxis);
+        foreach (var e in esferasDedo[f]) {
+            if (e == null) continue;
+            Vector3 s = e.transform.lossyScale;
+            float r = e.radius * Mathf.Max(s.x, s.y, s.z) * margen;
+            int n = Physics.OverlapSphereNonAlloc(e.transform.TransformPoint(e.center), r, bufferChoque,
+                                                  Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < n; i++) {
+                var c = bufferChoque[i];
+                var g = c.GetComponentInParent<Grabbable>();
+                // El objeto ya agarrado no frena: el modelo dobla el dedo entero de una vez (no puede
+                // envolverlo falange por falange) y el indice quedaba recto. Asi el dedo sigue al guante.
+                if (g != null && g.agarrado) continue;
+                if (g != null || !EsParteDeLaMano(c.transform)) return true;
+            }
+        }
+        return false;
+    }
+
+    // Mayor angulo (<= objetivo) al que el dedo se puede doblar sin atravesar objetos.
+    // Se calcula cada cuadro segun donde esta el objeto, asi nunca queda congelado.
+    float AnguloSinAtravesar(int f, float objetivo) {
+        if (esferasDedo[f].Count == 0 || !DedoChoca(f, objetivo)) return objetivo;
+        if (DedoChoca(f, 0f)) return objetivo;  // el objeto ya esta encima del dedo estirado: no frenar
+        float lo = 0f, hi = objetivo;  // lo = libre, hi = choca
+        for (int k = 0; k < 8; k++) {
+            float m = (lo + hi) * 0.5f;
+            if (DedoChoca(f, m)) hi = m; else lo = m;
+        }
+        return lo;
     }
 
     // Raiz de la mano 3D, para que los sensores ignoren los colliders de la propia mano
@@ -353,7 +415,8 @@ public class HandDemo : MonoBehaviour {
         int[] v = new int[5];
         for (int f = 0; f < 5; f++) {
             float p = Time.time < pulsoHasta[f] ? pulsoIntensidad[f] : 0f;
-            float total = hapticaActiva ? Mathf.Max(contacto[f], p, Teclado(f)) : 0f;
+            float c = sosteniendo && contacto[f] > 0f ? intensidadSosteniendo : contacto[f];
+            float total = hapticaActiva ? Mathf.Max(c, p, Teclado(f)) : 0f;
             vibracionActual[f] = total;
             v[f] = Mathf.RoundToInt(total * 255);
             if (v[f] != ultimoEnviado[f]) cambio = true;
@@ -472,7 +535,10 @@ public class HandDemo : MonoBehaviour {
         }
 
         // Giro relativo a la referencia, aplicado sobre la pose inicial del modelo
-        Quaternion objetivo = qSensor * Quaternion.Inverse(qReferencia) * rotInicialMuneca;
+        // El giro se expresa en ejes del mundo; giroMontaje alinea los ejes del sensor con los de la mano 3D
+        Quaternion m = Quaternion.AngleAxis(giroMontaje, Vector3.up);
+        Quaternion giro = m * (qSensor * Quaternion.Inverse(qReferencia)) * Quaternion.Inverse(m);
+        Quaternion objetivo = giro * rotInicialMuneca;
         muneca.rotation = Quaternion.Slerp(muneca.rotation, objetivo, Time.deltaTime * suavizadoRotacion);
     }
 
@@ -485,6 +551,9 @@ public class HandDemo : MonoBehaviour {
     // ------------------------------------------------------------------ Animacion
 
     void Update() {
+        // Si Unity recompila scripts durante Play, se pierde el estado interno (y se corta el USB):
+        // se reinicia en vez de lanzar errores cada cuadro con los dedos congelados
+        if (rest == null) { Start(); return; }
         while (colaMensajes.TryDequeue(out string m)) AgregarMensaje(m);
         if (!calibrando) ActualizarVibracion();
         ActualizarMuneca();
@@ -498,6 +567,8 @@ public class HandDemo : MonoBehaviour {
             flexionActual[f] = t;
 
             angle[f] = Mathf.Lerp(angle[f], t * maxAngle, Time.deltaTime * suavizado);
+            // El dedo se dobla lo que pida el guante, hasta la superficie del objeto (no lo atraviesa)
+            if (dedosChocan) angle[f] = AnguloSinAtravesar(f, angle[f]);
 
             for (int j = 0; j < fingers[f].Length; j++)
                 fingers[f][j].localRotation =
@@ -575,6 +646,10 @@ public class HandDemo : MonoBehaviour {
         if (GUILayout.Button("Recentrar muneca")) RecentrarMuneca();
         if (GUILayout.Button("Calibrar giroscopio")) CalibrarGiroscopio();
         GUILayout.EndHorizontal();
+        if (GUILayout.Button("Girar ejes del sensor 90 (ahora " + giroMontaje + ")")) {
+            giroMontaje = (giroMontaje + 90f) % 360f;
+            RecentrarMuneca();
+        }
         GUI.enabled = true;
         hapticaActiva = GUILayout.Toggle(hapticaActiva, " Haptica activa");
         tecladoActivo = GUILayout.Toggle(tecladoActivo, " Vibrar con teclado");
